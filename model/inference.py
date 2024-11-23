@@ -22,7 +22,7 @@ class FaceRetoucher:
     def postprocess_image(self, tensor_image):
         """Convert output tensor to PIL image."""
         tensor_image = tensor_image.squeeze(0).cpu().detach()
-        tensor_image = tensor_image * 0.5 + 0.5  # Denormalize
+        tensor_image = tensor_image * 0.5 + 0.5
         return F.to_pil_image(tensor_image)
 
     def retouch(self, image_path):
