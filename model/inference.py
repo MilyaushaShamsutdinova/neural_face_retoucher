@@ -23,13 +23,22 @@ class FaceRetoucher:
         """Convert output tensor to PIL image."""
         tensor_image = tensor_image.squeeze(0).cpu().detach()
         tensor_image = tensor_image * 0.5 + 0.5
-        return F.to_pil_image(tensor_image)
+        pil_image = F.to_pil_image(tensor_image)
+        pil_image = F.resize(pil_image, (1024, 1024))
+        return pil_image
+    
+    def retouch_image(self, input_image: Image.Image):
+        """Generate a retouched image from a given image itself."""
+        if not isinstance(input_image, Image.Image):
+            raise ValueError("Expected input to be a PIL.Image.Image object")
 
-    def retouch(self, image_path):
-        """Generate a retouched image."""
-        input_image = Image.open(image_path)
         preprocessed_image = self.preprocess_image(input_image)
         with torch.no_grad():
             retouched_tensor = self.generator(preprocessed_image)
         retouched_image = self.postprocess_image(retouched_tensor)
         return retouched_image
+    
+    def retouch(self, image_path):
+        """Generate a retouched image from a given image path."""
+        input_image = Image.open(image_path)
+        return self.retouch_image(input_image)
