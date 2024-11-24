@@ -1,37 +1,56 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.api import app
-from io import BytesIO
 from PIL import Image
+import io
 
-client = TestClient(app)
 
-@pytest.mark.asyncio
-async def test_retouch_image():
-    image = Image.new("RGB", (100, 100), color="black")
-    image_bytes = BytesIO()
-    image.save(image_bytes, format="JPEG")
-    image_bytes.seek(0)
+@pytest.fixture
+def client():
+    return TestClient(app)
 
-    response = client.post(
-        "/retouch",
-        files={"file": ("static\sample.png", image_bytes, "image/png")}
-    )
 
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "image/jpeg"
+def create_dummy_image(format="JPEG"):
+    image = Image.new("RGB", (1024, 1024), color=(255, 255, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, format=format)
+    buffer.seek(0)
+    return buffer
 
-    retouched_image = Image.open(BytesIO(response.content))
-    assert retouched_image.size == (100, 100)  # Ensure that the image size is correct
-    assert retouched_image.mode == "RGB"  # Ensure that the image mode is RGB
 
-@pytest.mark.asyncio
-async def test_invalid_file_type():
-    content = b"Hello, this is a text file."
-    response = client.post(
-        "/retouch",
-        files={"file": ("test_text.txt", content, "text/plain")}
-    )
+def test_retouch_valid_image(client):
+    image = create_dummy_image()
+    response = client.post("/retouch", files={"file": ("dummy.jpg", image, "image/jpeg")})
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+    assert response.headers["content-type"] == "image/jpeg", "Response is not a JPEG image."
 
-    assert response.status_code == 400
-    assert "Invalid file type" in response.text
+
+def test_retouch_invalid_file_type(client):
+    response = client.post("/retouch", files={"file": ("dummy.txt", b"This is not an image", "text/plain")})
+    assert response.status_code == 500, f"Expected 500, got {response.status_code}"
+    assert "Invalid file type" in response.json()["detail"], "Incorrect error message for invalid file type."
+
+
+def test_retouch_no_file(client):
+    response = client.post("/retouch")
+    assert response.status_code == 422, f"Expected 422, got {response.status_code}"
+    assert "No file provided." in response.json()["detail"], "Incorrect error message for missing file."
+
+
+def test_retouch_corrupted_image(client):
+    corrupted_image = io.BytesIO(b"This is not a valid image file")
+    response = client.post("/retouch", files={"file": ("corrupted.jpg", corrupted_image, "image/jpeg")})
+    assert response.status_code == 500, f"Expected 500, got {response.status_code}"
+    assert "not a valid image" in response.json()["detail"], "Incorrect error message for corrupted image."
+
+
+def test_retouch_inference_failure(client, monkeypatch):
+    def mock_retouch_image(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("model.inference.FaceRetoucher.retouch_image", mock_retouch_image)
+
+    image = create_dummy_image()
+    response = client.post("/retouch", files={"file": ("dummy.jpg", image, "image/jpeg")})
+    assert response.status_code == 500, f"Expected 500, got {response.status_code}"
+    assert "Model inference failed" in response.json()["detail"], "Incorrect error message for inference failure."

@@ -1,26 +1,37 @@
-import unittest
+import pytest
 from PIL import Image
+import torch
 from model.inference import FaceRetoucher
 
 
-class TestFaceRetoucher(unittest.TestCase):
-    def setUp(self):
-        self.model_path = "model/weights/generator.pth"
-        self.sample_image_path = "static/sample.png"
-        self.retoucher = FaceRetoucher(generator_weights_path=self.model_path)
+@pytest.fixture
+def face_retoucher():
+    return FaceRetoucher("model/weights/generator.pth")
 
-    def test_preprocess_image(self):
-        image = Image.open(self.sample_image_path)
-        preprocessed = self.retoucher.preprocess_image(image)
-        self.assertEqual(preprocessed.shape, (1, 3, 512, 512))
 
-    def test_postprocess_image(self):
-        import torch
-        tensor_image = torch.randn(1, 3, 512, 512)
-        postprocessed_image = self.retoucher.postprocess_image(tensor_image)
-        self.assertIsInstance(postprocessed_image, Image.Image)
+def test_preprocess_image(face_retoucher):
+    image = Image.new("RGB", (1024, 1024))
+    processed = face_retoucher.preprocess_image(image)
+    assert processed.shape == (1, 3, 512, 512), "Preprocessed image dimensions are incorrect."
+    assert isinstance(processed, torch.Tensor), "Preprocessed output is not a tensor."
 
-    def test_retouch(self):
-        retouched_image = self.retoucher.retouch(self.sample_image_path)
-        self.assertIsInstance(retouched_image, Image.Image)
-        retouched_image.save("static/retouched_test_output.jpg")
+
+def test_postprocess_image(face_retoucher):
+    dummy_tensor = torch.randn(1, 3, 512, 512)
+    postprocessed = face_retoucher.postprocess_image(dummy_tensor)
+    assert isinstance(postprocessed, Image.Image), "Postprocessed output is not a PIL.Image object."
+
+
+def test_retouch_image(face_retoucher):
+    image = Image.new("RGB", (1024, 1024))
+    retouched_image = face_retoucher.retouch_image(image)
+    assert isinstance(retouched_image, Image.Image), "Retouched output is not a PIL.Image object."
+
+
+def test_retouch(face_retoucher, tmp_path):
+    dummy_image_path = tmp_path / "dummy.jpg"
+    image = Image.new("RGB", (1024, 1024))
+    image.save(dummy_image_path)
+
+    retouched_image = face_retoucher.retouch(dummy_image_path)
+    assert isinstance(retouched_image, Image.Image), "Retouched output is not a PIL.Image object."
